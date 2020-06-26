@@ -1,25 +1,43 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
-    <TargetFrameworks>net20;net40;netstandard2.0</TargetFrameworks>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <AssemblyName>SMBLibrary</AssemblyName>
-    <Version>1.4.2</Version>
+    <TargetFramework>netstandard2.1</TargetFramework>
     <RootNamespace>SMBLibrary</RootNamespace>
-    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
-    <Authors>Tal Aloni</Authors>
-    <PackageDescription>SMBLibrary is an open-source C# SMB 1.0/CIFS, SMB 2.0 and SMB 2.1 server and client implementation</PackageDescription>
-    <PackageLicenseExpression>LGPL-3.0-or-later</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/TalAloni/SMBLibrary</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/TalAloni/SMBLibrary</RepositoryUrl>
+    <AssemblyName>SMBLibraryCore.Client</AssemblyName>
+    <PackageId>SMBLibraryCore.Client</PackageId>
+    <PackOnBuild>true</PackOnBuild>
+    <Authors>tormartinh74</Authors>
+    <Company>Dualog AS</Company>
+    <Description>Free, Open Source, User-Mode SMB 1.0/CIFS, SMB 2.0 and SMB 2.1 Client Library</Description>
+    <RepositoryUrl>https://github.com/Dualog/SMBLibrary</RepositoryUrl>
+    <Version>1.0.0.0</Version>
   </PropertyGroup>
 
+  <!-- PropertyGroup>
+    <PackageLicenseUrl>https://github.com/jordanlytle/SMBLibrary/blob/master/License.txt</PackageLicenseUrl>
+    <PackageProjectUrl>https://github.com/jordanlytle/SMBLibrary</PackageProjectUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Version>1.0.0.0</Version>
+  </PropertyGroup -->
+
   <ItemGroup>
-    <ProjectReference Include="..\Utilities\Utilities.csproj" PrivateAssets="All" />
+    <ProjectReference Include="..\Utilities\Utilities.csproj">
+    </ProjectReference>
   </ItemGroup>
-
-  <Target Name="ILRepack" Condition="'$(Configuration)' == 'Release'" AfterTargets="AfterBuild">
-    <Exec Command="&quot;$(ProgramW6432)\ILRepack\ILRepack.exe&quot; /out=&quot;$(OutputPath)\SMBLibrary.dll&quot; &quot;$(OutputPath)\SMBLibrary.dll&quot; &quot;$(OutputPath)\Utilities.dll&quot;"></Exec>
-  </Target>
-
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
+    <PackageReference Include="NuGet.Build.Packaging" Version="0.2.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Properties\" />
+  </ItemGroup>
 </Project>

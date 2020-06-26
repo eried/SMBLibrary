@@ -6,6 +6,9 @@
  */
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using SMBLibrary.RPC;
 using SMBLibrary.Services;
 using Utilities;
@@ -14,15 +17,26 @@ namespace SMBLibrary.Client
 {
     public class ServerServiceHelper
     {
-        public static List<string> ListShares(INTFileStore namedPipeShare, ShareType? shareType, out NTStatus status)
+        public static async Task<(NTStatus status, IEnumerable<string> result)> ListShares(INTFileStore namedPipeShare, ShareType? shareType, CancellationToken cancellationToken)
         {
-            object pipeHandle;
-            FileStatus fileStatus;
-            status = namedPipeShare.CreateFile(out pipeHandle, out fileStatus, ServerService.ServicePipeName, (AccessMask)(FileAccessMask.FILE_READ_DATA | FileAccessMask.FILE_WRITE_DATA), 0, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, 0, null);
+            //object pipeHandle;
+            //FileStatus fileStatus;
+            //status = namedPipeShare.CreateFile(out pipeHandle, out fileStatus, ServerService.ServicePipeName, (AccessMask)(FileAccessMask.FILE_READ_DATA | FileAccessMask.FILE_WRITE_DATA), 0, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, 0, null);
+
+            var (status, pipeHandle, fileStatus) = await namedPipeShare.CreateFile(ServerService.ServicePipeName,
+                                                                               (AccessMask)(FileAccessMask.FILE_READ_DATA | FileAccessMask.FILE_WRITE_DATA),
+                                                                               0,
+                                                                               ShareAccess.Read | ShareAccess.Write,
+                                                                               CreateDisposition.FILE_OPEN,
+                                                                               0,
+                                                                               null,
+                                                                               cancellationToken);
+
             if (status != NTStatus.STATUS_SUCCESS)
             {
-                return null;
+                return (status, Enumerable.Empty<string>());
             }
+
             BindPDU bindPDU = new BindPDU();
             bindPDU.Flags = PacketFlags.FirstFragment | PacketFlags.LastFragment;
             bindPDU.DataRepresentation.CharacterFormat = CharacterFormat.ASCII;
@@ -39,16 +53,16 @@ namespace SMBLibrary.Client
 
             byte[] input = bindPDU.GetBytes();
             byte[] output;
-            status = namedPipeShare.DeviceIOControl(pipeHandle, (uint)IoControlCode.FSCTL_PIPE_TRANSCEIVE, input, out output, 4096);
+            (status, output) = await namedPipeShare.DeviceIOControl(pipeHandle, (uint)IoControlCode.FSCTL_PIPE_TRANSCEIVE, input, 4096, cancellationToken);
             if (status != NTStatus.STATUS_SUCCESS)
             {
-                return null;
+                return (status, Enumerable.Empty<string>());
             }
             BindAckPDU bindAckPDU = RPCPDU.GetPDU(output, 0) as BindAckPDU;
             if (bindAckPDU == null)
             {
                 status = NTStatus.STATUS_NOT_SUPPORTED;
-                return null;
+                return (status, Enumerable.Empty<string>());
             }
 
             NetrShareEnumRequest shareEnumRequest = new NetrShareEnumRequest();
@@ -67,31 +81,31 @@ namespace SMBLibrary.Client
             requestPDU.AllocationHint = (uint)requestPDU.Data.Length;
             input = requestPDU.GetBytes();
             int maxOutputLength = bindAckPDU.MaxTransmitFragmentSize;
-            status = namedPipeShare.DeviceIOControl(pipeHandle, (uint)IoControlCode.FSCTL_PIPE_TRANSCEIVE, input, out output, maxOutputLength);
+            (status, output) = await namedPipeShare.DeviceIOControl(pipeHandle, (uint)IoControlCode.FSCTL_PIPE_TRANSCEIVE, input, maxOutputLength, cancellationToken);
             if (status != NTStatus.STATUS_SUCCESS)
             {
-                return null;
+                return (status, Enumerable.Empty<string>());
             }
             ResponsePDU responsePDU = RPCPDU.GetPDU(output, 0) as ResponsePDU;
             if (responsePDU == null)
             {
                 status = NTStatus.STATUS_NOT_SUPPORTED;
-                return null;
+                return (status, Enumerable.Empty<string>());
             }
 
             byte[] responseData = responsePDU.Data;
             while ((responsePDU.Flags & PacketFlags.LastFragment) == 0)
             {
-                status = namedPipeShare.ReadFile(out output, pipeHandle, 0, maxOutputLength);
+                (status, output) = await namedPipeShare.ReadFileAsync(pipeHandle, 0, maxOutputLength, cancellationToken);
                 if (status != NTStatus.STATUS_SUCCESS)
                 {
-                    return null;
+                    return (status, Enumerable.Empty<string>());
                 }
                 responsePDU = RPCPDU.GetPDU(output, 0) as ResponsePDU;
                 if (responsePDU == null)
                 {
                     status = NTStatus.STATUS_NOT_SUPPORTED;
-                    return null;
+                    return (status, Enumerable.Empty<string>());
                 }
                 responseData = ByteUtils.Concatenate(responseData, responsePDU.Data);
             }
@@ -107,7 +121,8 @@ namespace SMBLibrary.Client
                 {
                     status = NTStatus.STATUS_NOT_SUPPORTED;
                 }
-                return null;
+
+                return (status, Enumerable.Empty<string>());
             }
 
             List<string> result = new List<string>();
@@ -118,7 +133,7 @@ namespace SMBLibrary.Client
                     result.Add(entry.NetName.Value);
                 }
             }
-            return result;
+            return (status, result);
         }
     }
 }

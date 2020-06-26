@@ -7,6 +7,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using Utilities;
 
 namespace SMBLibrary
@@ -18,33 +20,33 @@ namespace SMBLibrary
     /// </summary>
     public interface INTFileStore
     {
-        NTStatus CreateFile(out object handle, out FileStatus fileStatus, string path, AccessMask desiredAccess, FileAttributes fileAttributes, ShareAccess shareAccess, CreateDisposition createDisposition, CreateOptions createOptions, SecurityContext securityContext);
+        Task<(NTStatus status, object handle, FileStatus fileStatus)> CreateFile(string path, AccessMask desiredAccess, FileAttributes fileAttributes, ShareAccess shareAccess, CreateDisposition createDisposition, CreateOptions createOptions, SecurityContext securityContext, CancellationToken cancellationToken);
 
-        NTStatus CloseFile(object handle);
+        Task<NTStatus> CloseFileAsync(object handle, CancellationToken cancellationToken);
 
-        NTStatus ReadFile(out byte[] data, object handle, long offset, int maxCount);
+        Task<(NTStatus status, byte[] data)> ReadFileAsync(object handle, long offset, int maxCount, CancellationToken cancellationToken);
 
-        NTStatus WriteFile(out int numberOfBytesWritten, object handle, long offset, byte[] data);
+        Task<(NTStatus status, int numberOfBytesWritten)> WriteFileAsync(object handle, long offset, byte[] data, CancellationToken cancellationToken);
 
-        NTStatus FlushFileBuffers(object handle);
+        Task<NTStatus> FlushFileBuffersAsync(object handle);
 
         NTStatus LockFile(object handle, long byteOffset, long length, bool exclusiveLock);
 
         NTStatus UnlockFile(object handle, long byteOffset, long length);
 
-        NTStatus QueryDirectory(out List<QueryDirectoryFileInformation> result, object handle, string fileName, FileInformationClass informationClass);
+        Task<(NTStatus status, IEnumerable<QueryDirectoryFileInformation> result)> QueryDirectory(object handle, string fileName, FileInformationClass informationClass, CancellationToken cancellationToken);
 
-        NTStatus GetFileInformation(out FileInformation result, object handle, FileInformationClass informationClass);
+        Task<(NTStatus status, FileInformation result)> GetFileInformationAsync(object handle, FileInformationClass informationClass, CancellationToken cancellationToken);
 
-        NTStatus SetFileInformation(object handle, FileInformation information);
+        Task<NTStatus> SetFileInformationAsync(object handle, FileInformation information, CancellationToken cancellationToken);
 
-        NTStatus GetFileSystemInformation(out FileSystemInformation result, FileSystemInformationClass informationClass);
+        Task<(NTStatus status, FileSystemInformation result)> GetFileSystemInformationAsync(FileSystemInformationClass informationClass, CancellationToken cancellationToken);
 
-        NTStatus SetFileSystemInformation(FileSystemInformation information);
+        Task<(NTStatus status, FileSystemInformation result)> GetFileSystemInformationAsync(object handle, FileSystemInformationClass informationClass, CancellationToken cancellationToken);
 
-        NTStatus GetSecurityInformation(out SecurityDescriptor result, object handle, SecurityInformation securityInformation);
+        Task<(NTStatus status, SecurityDescriptor result)> GetSecurityInformation(object handle, SecurityInformation securityInformation, CancellationToken cancellationToken);
 
-        NTStatus SetSecurityInformation(object handle, SecurityInformation securityInformation, SecurityDescriptor securityDescriptor);
+        Task<NTStatus> SetSecurityInformation(object handle, SecurityInformation securityInformation, SecurityDescriptor securityDescriptor);
 
         /// <summary>
         /// Monitor the contents of a directory (and its subdirectories) by using change notifications.
@@ -59,6 +61,6 @@ namespace SMBLibrary
 
         NTStatus Cancel(object ioRequest);
 
-        NTStatus DeviceIOControl(object handle, uint ctlCode, byte[] input, out byte[] output, int maxOutputLength);
+        Task<(NTStatus status, byte[] output)> DeviceIOControl(object handle, uint ctlCode, byte[] input, int maxOutputLength, CancellationToken cancellationToken);
     }
 }

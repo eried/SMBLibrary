@@ -7,6 +7,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using SMBLibrary.RPC;
 using SMBLibrary.Services;
 using Utilities;
@@ -22,9 +25,9 @@ namespace SMBLibrary
             m_services = services;
         }
 
-        public NTStatus CreateFile(out object handle, out FileStatus fileStatus, string path, AccessMask desiredAccess, FileAttributes fileAttributes, ShareAccess shareAccess, CreateDisposition createDisposition, CreateOptions createOptions, SecurityContext securityContext)
+        public Task<(NTStatus status, object handle, FileStatus fileStatus)> CreateFile(string path, AccessMask desiredAccess, FileAttributes fileAttributes, ShareAccess shareAccess, CreateDisposition createDisposition, CreateOptions createOptions, SecurityContext securityContext, CancellationToken cancellationToken)
         {
-            fileStatus = FileStatus.FILE_DOES_NOT_EXIST;
+            var fileStatus = FileStatus.FILE_DOES_NOT_EXIST;
             // It is possible to have a named pipe that does not use RPC (e.g. MS-WSP),
             // However this is not currently needed by our implementation.
             RemoteService service = GetService(path);
@@ -33,22 +36,22 @@ namespace SMBLibrary
                 // All instances of a named pipe share the same pipe name, but each instance has its own buffers and handles,
                 // and provides a separate conduit for client/server communication.
                 RPCPipeStream stream = new RPCPipeStream(service);
-                handle = new FileHandle(path, false, stream, false);
+                var handle = new FileHandle(path, false, stream, false);
                 fileStatus = FileStatus.FILE_OPENED;
-                return NTStatus.STATUS_SUCCESS;
+                return Task.FromResult<(NTStatus, object, FileStatus)>((NTStatus.STATUS_SUCCESS, handle, fileStatus));
             }
-            handle = null;
-            return NTStatus.STATUS_OBJECT_PATH_NOT_FOUND;
+
+            return Task.FromResult<(NTStatus, object, FileStatus)>((NTStatus.STATUS_OBJECT_PATH_NOT_FOUND, null, fileStatus));
         }
 
-        public NTStatus CloseFile(object handle)
+        public Task<NTStatus> CloseFileAsync(object handle, CancellationToken cancellationToken)
         {
             FileHandle fileHandle = (FileHandle)handle;
             if (fileHandle.Stream != null)
             {
                 fileHandle.Stream.Close();
             }
-            return NTStatus.STATUS_SUCCESS;
+            return Task.FromResult(NTStatus.STATUS_SUCCESS);
         }
 
         private RemoteService GetService(string path)
@@ -68,35 +71,35 @@ namespace SMBLibrary
             return null;
         }
 
-        public NTStatus ReadFile(out byte[] data, object handle, long offset, int maxCount)
+        public Task<(NTStatus status, byte[] data)> ReadFileAsync(object handle, long offset, int maxCount, CancellationToken cancellationToken)
         {
             Stream stream = ((FileHandle)handle).Stream;
-            data = new byte[maxCount];
+            var data = new byte[maxCount];
             int bytesRead = stream.Read(data, 0, maxCount);
             if (bytesRead < maxCount)
             {
                 // EOF, we must trim the response data array
                 data = ByteReader.ReadBytes(data, 0, bytesRead);
             }
-            return NTStatus.STATUS_SUCCESS;
+
+            return Task.FromResult((NTStatus.STATUS_SUCCESS, data));
         }
 
-        public NTStatus WriteFile(out int numberOfBytesWritten, object handle, long offset, byte[] data)
+        public Task<(NTStatus status, int numberOfBytesWritten)> WriteFileAsync(object handle, long offset, byte[] data, CancellationToken cancellationToken)
         {
             Stream stream = ((FileHandle)handle).Stream;
             stream.Write(data, 0, data.Length);
-            numberOfBytesWritten = data.Length;
-            return NTStatus.STATUS_SUCCESS;
+            return Task.FromResult((NTStatus.STATUS_SUCCESS, data.Length));
         }
 
-        public NTStatus FlushFileBuffers(object handle)
+        public Task<NTStatus> FlushFileBuffersAsync(object handle)
         {
             FileHandle fileHandle = (FileHandle)handle;
             if (fileHandle.Stream != null)
             {
                 fileHandle.Stream.Flush();
             }
-            return NTStatus.STATUS_SUCCESS;
+            return Task.FromResult(NTStatus.STATUS_SUCCESS);
         }
 
         public NTStatus LockFile(object handle, long byteOffset, long length, bool exclusiveLock)
@@ -109,9 +112,9 @@ namespace SMBLibrary
             return NTStatus.STATUS_NOT_SUPPORTED;
         }
 
-        public NTStatus DeviceIOControl(object handle, uint ctlCode, byte[] input, out byte[] output, int maxOutputLength)
+        public async Task<(NTStatus status, byte[] output)> DeviceIOControl(object handle, uint ctlCode, byte[] input, int maxOutputLength, CancellationToken cancellationToken)
         {
-            output = null;
+            byte[] output = null;
             if (ctlCode == (uint)IoControlCode.FSCTL_PIPE_WAIT)
             {
                 PipeWaitRequest request;
@@ -121,53 +124,53 @@ namespace SMBLibrary
                 }
                 catch
                 {
-                    return NTStatus.STATUS_INVALID_PARAMETER;
+                    return (NTStatus.STATUS_INVALID_PARAMETER, output);
                 }
 
                 RemoteService service = GetService(request.Name);
                 if (service == null)
                 {
-                    return NTStatus.STATUS_OBJECT_NAME_NOT_FOUND;
+                    return (NTStatus.STATUS_OBJECT_NAME_NOT_FOUND, output);
                 }
 
                 output = new byte[0];
-                return NTStatus.STATUS_SUCCESS;
+                return (NTStatus.STATUS_SUCCESS, output);
             }
             else if (ctlCode == (uint)IoControlCode.FSCTL_PIPE_TRANSCEIVE)
             {
-                int numberOfBytesWritten;
-                NTStatus writeStatus = WriteFile(out numberOfBytesWritten, handle, 0, input);
+                var (writeStatus, numberOfBytesWritten) = await WriteFileAsync(handle, 0, input, cancellationToken);
                 if (writeStatus != NTStatus.STATUS_SUCCESS)
                 {
-                    return writeStatus;
+                    return (writeStatus, output);
                 }
                 int messageLength = ((RPCPipeStream)((FileHandle)handle).Stream).MessageLength;
-                NTStatus readStatus = ReadFile(out output, handle, 0, maxOutputLength);
+
+                NTStatus readStatus;                                
+                (readStatus, output) = await ReadFileAsync(handle, 0, maxOutputLength, cancellationToken);
                 if (readStatus != NTStatus.STATUS_SUCCESS)
                 {
-                    return readStatus;
+                    return (readStatus, output);
                 }
 
                 if (output.Length < messageLength)
                 {
-                    return NTStatus.STATUS_BUFFER_OVERFLOW;
+                    return (NTStatus.STATUS_BUFFER_OVERFLOW, output);
                 }
                 else
                 {
-                    return NTStatus.STATUS_SUCCESS;
+                    return (NTStatus.STATUS_SUCCESS, output);
                 }
             }
 
-            return NTStatus.STATUS_NOT_SUPPORTED;
+            return (NTStatus.STATUS_NOT_SUPPORTED, output);
         }
 
-        public NTStatus QueryDirectory(out List<QueryDirectoryFileInformation> result, object directoryHandle, string fileName, FileInformationClass informationClass)
+        public Task<(NTStatus status, IEnumerable<QueryDirectoryFileInformation> result)> QueryDirectory(object handle, string fileName, FileInformationClass informationClass, CancellationToken cancellationToken)
         {
-            result = null;
-            return NTStatus.STATUS_NOT_SUPPORTED;
+            return Task.FromResult((NTStatus.STATUS_NOT_SUPPORTED, Enumerable.Empty<QueryDirectoryFileInformation>()));
         }
 
-        public NTStatus GetFileInformation(out FileInformation result, object handle, FileInformationClass informationClass)
+        public Task<(NTStatus status, FileInformation result)> GetFileInformationAsync(object handle, FileInformationClass informationClass, CancellationToken cancellationToken)
         {
             switch (informationClass)
             {
@@ -175,54 +178,53 @@ namespace SMBLibrary
                     {
                         FileBasicInformation information = new FileBasicInformation();
                         information.FileAttributes = FileAttributes.Temporary;
-                        result = information;
-                        return NTStatus.STATUS_SUCCESS;
+                        return Task.FromResult<(NTStatus, FileInformation)>((NTStatus.STATUS_SUCCESS, information));
                     }
                 case FileInformationClass.FileStandardInformation:
                     {
                         FileStandardInformation information = new FileStandardInformation();
                         information.DeletePending = false;
-                        result = information;
-                        return NTStatus.STATUS_SUCCESS;
+                        return Task.FromResult<(NTStatus, FileInformation)>((NTStatus.STATUS_SUCCESS, information));
                     }
                 case FileInformationClass.FileNetworkOpenInformation:
                     {
                         FileNetworkOpenInformation information = new FileNetworkOpenInformation();
                         information.FileAttributes = FileAttributes.Temporary;
-                        result = information;
-                        return NTStatus.STATUS_SUCCESS;
+                        return Task.FromResult<(NTStatus, FileInformation)>((NTStatus.STATUS_SUCCESS, information));
                     }
                 default:
-                    result = null;
-                    return NTStatus.STATUS_INVALID_INFO_CLASS;
+                    return Task.FromResult<(NTStatus, FileInformation)>((NTStatus.STATUS_INVALID_INFO_CLASS, null));
             }
         }
 
-        public NTStatus SetFileInformation(object handle, FileInformation information)
+        public Task<NTStatus> SetFileInformationAsync(object handle, FileInformation information, CancellationToken cancellationToken)
         {
-            return NTStatus.STATUS_NOT_SUPPORTED;
+            return Task.FromResult(NTStatus.STATUS_NOT_SUPPORTED);
         }
 
-        public NTStatus GetFileSystemInformation(out FileSystemInformation result, FileSystemInformationClass informationClass)
+        public Task<(NTStatus status, FileSystemInformation result)> GetFileSystemInformationAsync(object handle, FileSystemInformationClass informationClass, CancellationToken cancellationToken)
         {
-            result = null;
-            return NTStatus.STATUS_NOT_SUPPORTED;
+            return Task.FromResult<(NTStatus, FileSystemInformation)>((NTStatus.STATUS_NOT_SUPPORTED, null));
         }
 
-        public NTStatus SetFileSystemInformation(FileSystemInformation information)
+        public Task<(NTStatus status, FileSystemInformation result)> GetFileSystemInformationAsync(FileSystemInformationClass informationClass, CancellationToken cancellationToken)
         {
-            return NTStatus.STATUS_NOT_SUPPORTED;
+            return Task.FromResult<(NTStatus, FileSystemInformation)>((NTStatus.STATUS_NOT_SUPPORTED, null));
         }
 
-        public NTStatus GetSecurityInformation(out SecurityDescriptor result, object handle, SecurityInformation securityInformation)
+        public Task<NTStatus> SetFileSystemInformation(FileSystemInformation information)
         {
-            result = null;
-            return NTStatus.STATUS_NOT_SUPPORTED;
+            return Task.FromResult(NTStatus.STATUS_NOT_SUPPORTED);
         }
 
-        public NTStatus SetSecurityInformation(object handle, SecurityInformation securityInformation, SecurityDescriptor securityDescriptor)
+        public Task<(NTStatus status, SecurityDescriptor result)> GetSecurityInformation(object handle, SecurityInformation securityInformation, CancellationToken cancellationToken)
         {
-            return NTStatus.STATUS_NOT_SUPPORTED;
+            return Task.FromResult<(NTStatus, SecurityDescriptor)>((NTStatus.STATUS_NOT_SUPPORTED, null));
+        }
+
+        public Task<NTStatus> SetSecurityInformation(object handle, SecurityInformation securityInformation, SecurityDescriptor securityDescriptor)
+        {
+            return Task.FromResult(NTStatus.STATUS_NOT_SUPPORTED);
         }
 
         public NTStatus NotifyChange(out object ioRequest, object handle, NotifyChangeFilter completionFilter, bool watchTree, int outputBufferSize, OnNotifyChangeCompleted onNotifyChangeCompleted, object context)
