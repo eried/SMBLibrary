@@ -11,6 +11,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - uses: actions/checkout@v1
+    - name: Setup Dotnet Core
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 3.1.100
+        source-url: https://nuget.pkg.github.com/Dualog/index.json
+      env:
+        NUGET_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
     - name: Fetch tags and master for GitVersion
       run: |
         git fetch --tags
@@ -27,15 +36,6 @@ jobs:
         assemblyVersion: ${{ steps.gitversion.outputs.AssemblySemVer }}
         fileVersion: ${{ steps.gitversion.outputs.MajorMinorPatch }}
         informationalVersion: ${{ steps.gitversion.outputs.InformationalVersion }}
-
-    - uses: actions/checkout@v1
-    - name: Setup Dotnet Core
-      uses: actions/setup-dotnet@v1
-      with:
-        dotnet-version: 3.1.100
-        source-url: https://nuget.pkg.github.com/Dualog/index.json
-      env:
-        NUGET_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
     - name: Setup Nuget Config
       run: sed 's/GITHUB_TOKEN/${{ secrets.NUGET_TOKEN }}/g' .nuget.config > nuget.config
