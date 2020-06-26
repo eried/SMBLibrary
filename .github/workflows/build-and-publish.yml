@@ -54,12 +54,4 @@ jobs:
 
     - name: Publish Package
       run: dotnet nuget push SMBLibrary/bin/Release/*.nupkg -k ${{ secrets.NUGET_TOKEN }} -s https://api.nuget.org/v3/index.json
-
-
-    - name: Create Release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.bump_version.outputs.new_tag }}
-        release_name: Release ${{ github.ref }}
+      
