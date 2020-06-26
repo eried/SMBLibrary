@@ -21,7 +21,7 @@ jobs:
         NUGET_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
     - name: Setup Nuget Config
-      run: sed 's/GITHUB_TOKEN/${{ secrets.GITHUB_TOKEN }}/g' .nuget.config > nuget.config
+      run: sed 's/GITHUB_TOKEN/${{ secrets.NUGET_TOKEN }}/g' .nuget.config > nuget.config
 
     - name: Build
       run: dotnet build --configuration Release
@@ -44,10 +44,11 @@ jobs:
         version: ${{ env.VERSION_NUMBER }}
 
     - name: Pack
-      run: dotnet pack --configuration Release Example.PackageName
+      run: dotnet pack --configuration Release
 
     - name: Publish Package
-      run: dotnet nuget push SMBLibrary/bin/Release/*.nupkg --source https://nuget.pkg.github.com/Dualog/index.json
+      run: dotnet nuget pushSMBLibrary/bin/Release/*.nupkg -k ${{ secrets.NUGET_TOKEN }} -s https://api.nuget.org/v3/index.json
+
 
     - name: Create Release
       uses: actions/create-release@v1
