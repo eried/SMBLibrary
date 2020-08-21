@@ -52,10 +52,18 @@ namespace SMBLibrary.Client
         private byte[] m_sessionKey;
         private ushort m_availableCredits = 1;
 
+        /// <summary>
+        /// New instance of SMB2Client. Open a new connection with ConnectAsync
+        /// </summary>
         public SMB2Client()
         {
         }
 
+        /// <summary>
+        /// Connects to the remote server. Open a file handle with TreeConnectAsync
+        /// </summary>
+        /// <param name="serverAddress">The address of the server</param>
+        /// <returns></returns>
         public async Task<bool> ConnectAsync(IPAddress serverAddress, SMBTransportType transport, CancellationToken cancellationToken)
         {
             m_transport = transport;
@@ -70,7 +78,7 @@ namespace SMBLibrary.Client
                 {
                     port = DirectTCPPort;
                 }
-
+                
                 if (!ConnectSocket(serverAddress, port))
                 {
                     return false;
