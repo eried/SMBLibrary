@@ -62,6 +62,25 @@ namespace SMBLibrary.Client
         /// <summary>
         /// Connects to the remote server. Open a file handle with TreeConnectAsync
         /// </summary>
+        /// <param name="server">The host name or address of the server</param>
+        /// <returns></returns>
+        public async Task<bool> ConnectAsync(string server, SMBTransportType transport, CancellationToken cancellationToken)
+        {
+            if (IPAddress.TryParse(server, out var ipAddress) == false)
+            {
+                var ips = await Dns.GetHostEntryAsync(server);
+                ipAddress = ips.AddressList.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+
+                if (ipAddress is null)
+                    throw new Exception("Unable to resolve address for host");
+            }
+
+            return await ConnectAsync(ipAddress, transport, cancellationToken);
+        }
+
+        /// <summary>
+        /// Connects to the remote server. Open a file handle with TreeConnectAsync
+        /// </summary>
         /// <param name="serverAddress">The address of the server</param>
         /// <returns></returns>
         public async Task<bool> ConnectAsync(IPAddress serverAddress, SMBTransportType transport, CancellationToken cancellationToken)
